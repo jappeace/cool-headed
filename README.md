@@ -10,6 +10,8 @@ error: a 'aarch64-linux' with features {} is required to build '/nix/store/2as9b
 my son, this is the magic spell that gives you rasberry pi and other aarch
 buildng magic. use it wisely.                                             ```
 (add to configuration.nix of nixos host)
+
+```
 boot.binfmt.emulatedSystems = [ "aarch64-linux" ];
 ```
 
