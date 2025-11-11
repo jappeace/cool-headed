@@ -30,3 +30,21 @@ assuming your sdcard is on sda.
 you can find that out with lsblk and lsusb
 
 NB: no dd madness, cat is faster! dd set's a fixed block size, cat just searches a good one.
+
+
+
+okay okay we got that,
+I just shoved it into the raspberry pi, turned it on, prayed a bit,
+and then opene my router (ip adddr and then the first or last address of range), 
+it said a "nixos" had appeared.
+
+guess that's us?
+
+it has ip 192.168.0.148
+so I ssh into that and it let me in.
+success!
+
+so now I want to switch a new config into it.
+
+TBD
+
