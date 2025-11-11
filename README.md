@@ -17,3 +17,16 @@ boot.binfmt.emulatedSystems = [ "aarch64-linux" ];
 
 
 Now it builds!
+
+
+so the spells are:
+```
+nix-build .
+ls result/sd-image/
+zstdcat result/sd-image/nixos-image-sd-card-25.11pre891648.f6b44b240152-aarch64-linux.img.zst > /dev/sda
+```
+
+assuming your sdcard is on sda.
+you can find that out with lsblk and lsusb
+
+NB: no dd madness, cat is faster! dd set's a fixed block size, cat just searches a good one.
