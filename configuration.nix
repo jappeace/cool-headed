@@ -34,7 +34,10 @@ in
       # TODO fuck is this? ask leana
       # nix.package = pkgs.nix-monitored;
 
-      system.nixos.version = lib.substring 0 8 sources.nixpkgs.revision;
+      # TODO borken???
+       # error: attribute 'revision' missing
+       # at /home/jappie/projects/cool-headed/configuration.nix:37:48:
+      # system.nixos.version = lib.substring 0 8 sources.nixpkgs.revision;
     }
 
 
@@ -99,9 +102,8 @@ in
     wireless = {
       enable = true;
       userControlled.enable = true;
-      secretsFile = config.age.secrets.wpa_password.path;
       scanOnLowSignal = false;
-      networks."jappie-hutje".psk = "jappiejappie";
+      networks."jappie-hutje".psk = "jappiejappie"; # don't hack me guys, thanks :)
     };
   };
   services.openssh = {
