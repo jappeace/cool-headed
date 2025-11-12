@@ -2,15 +2,15 @@ let
   sources = import ./npins;
 
 in
-{
-  modulesPath,
-  config,
-  pkgs,
-  lib,
-  ...
+{ modulesPath
+, config
+, pkgs
+, lib
+, ...
 }:
 let
   inherit (lib.modules) mkAliasOptionModule;
+  hpkgs = import ./nix/hpkgs.nix { pkgs = pkgs;};
 in
 {
   imports = [
@@ -70,8 +70,17 @@ in
     })
   ];
 
-  users.users.root.openssh.authorizedKeys.keys =
-    ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILYz4bDXj7t7NQ8QBYKKFBK8myYK6R8/8cybxlMUnIQn hi@jappie.me"]; # TODO
+  users = { users.root.openssh.authorizedKeys.keys =
+    [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILYz4bDXj7t7NQ8QBYKKFBK8myYK6R8/8cybxlMUnIQn hi@jappie.me" ]; # TODO
+
+        extraGroups.coolHeaded = { };
+        extraUsers.coolHeaded =
+        { description = "CoolHeaded web service";
+            group = "coolHeaded";
+            useDefaultShell = true;
+            isSystemUser = true;
+        };
+    };
 
   networking = {
     networkmanager.enable = lib.mkForce false;
@@ -94,6 +103,20 @@ in
 
 
   hardware.bluetooth.enable = true;
+
+
+  systemd.services.cool-headed=
+    {
+      description = "Cool headed ble gpio control";
+      serviceConfig = {
+        Type = "simple";
+        ExecStart = "${hpkgs.cool-headed}/bin/exe";
+
+        Restart = "on-failure";
+        User = "coolHeaded";
+      };
+      wantedBy = [ "multi-user.target" ];
+    };
 
 
 }
