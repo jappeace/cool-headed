@@ -6,5 +6,5 @@ let
 in
 {
   sdimage = evalled.config.system.build.sdImage;
-  res = evalled;
+  switch = evalled;
 }

@@ -26,36 +26,12 @@ in
           # ../overlays/agenix.nix
         ];
 
-        # Set NIX_PATH and flake registry at the same time
-        # https://github.com/NixOS/nixpkgs/pull/254405
         flake.source = sources.nixpkgs;
       };
-
-      # TODO fuck is this? ask leana
-      # nix.package = pkgs.nix-monitored;
-
-      # TODO borken???
-       # error: attribute 'revision' missing
-       # at /home/jappie/projects/cool-headed/configuration.nix:37:48:
-      # system.nixos.version = lib.substring 0 8 sources.nixpkgs.revision;
     }
 
 
-    #
-    # Extern modules
-    #
-    # (sources.agenix + "/modules/age.nix")
-
     (sources.nixos-hardware + "/raspberry-pi/4")
-
-    # #
-    # # Secrets
-    # #
-    # {
-    #   age.secrets = {
-    #     wpa_password.file = "${../secrets/wpa_password.age}";
-    #   };
-    # }
   ];
   environment.systemPackages = [
     pkgs.man-pages
@@ -96,6 +72,7 @@ in
     ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILYz4bDXj7t7NQ8QBYKKFBK8myYK6R8/8cybxlMUnIQn hi@jappie.me"]; # TODO
 
   networking = {
+    hostName = "cool-headed";
     networkmanager.enable = lib.mkForce false;
 
     # To enable roaming https://wiki.archlinux.org/title/Wpa_supplicant#Roaming
