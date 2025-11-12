@@ -26,6 +26,8 @@ in
           # ../overlays/agenix.nix
         ];
 
+        # Set NIX_PATH and flake registry at the same time
+        # https://github.com/NixOS/nixpkgs/pull/254405
         flake.source = sources.nixpkgs;
       };
     }
@@ -72,7 +74,6 @@ in
     ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILYz4bDXj7t7NQ8QBYKKFBK8myYK6R8/8cybxlMUnIQn hi@jappie.me"]; # TODO
 
   networking = {
-    hostName = "cool-headed";
     networkmanager.enable = lib.mkForce false;
 
     # To enable roaming https://wiki.archlinux.org/title/Wpa_supplicant#Roaming
