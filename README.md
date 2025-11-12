@@ -1,3 +1,5 @@
+![cool headed](./cool.png)
+
 currently this is a raspberry pi experiment
 
 that can't even build:
