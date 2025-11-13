@@ -13,7 +13,7 @@ pkgs.haskellPackages.override {
     # NB this is a bit silly because nix files are now considered for the build
     # bigger projects should consider putting haskell stuff in a subfolder
     cool-headed =
-      lib.overrideCabal (hnew.callCabal2nix "cool-headed" ../. { }) (drv: {
+      lib.overrideCabal (hnew.callCabal2nix "cool-headed" ../haskell/. { }) (drv: {
         # reduce build times
         enableLibraryProfiling = false;
         enableExecutableProfiling = false;

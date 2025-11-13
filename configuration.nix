@@ -3,19 +3,17 @@ let
 
 in
 { modulesPath
-, config
 , pkgs
 , lib
 , ...
 }:
 let
-  inherit (lib.modules) mkAliasOptionModule;
   hpkgs = import ./nix/hpkgs.nix { pkgs = pkgs;};
 in
 {
   imports = [
     # The generator and hardware configuration
-    (modulesPath + "/installer/sd-card/sd-image-aarch64.nix")
+    (modulesPath + "/installer/sd-card/sd-image-aarch64.nix") # https://github.com/NixOS/nixpkgs/blob/master/nixos/modules/installer/sd-card/sd-image-aarch64.nix#L25
 
     #
     # nixpkgs
@@ -35,6 +33,21 @@ in
 
     (sources.nixos-hardware + "/raspberry-pi/4")
   ];
+
+  # the serial port that should go to Bluetooth is currently being used as a kernel console, so the Bluetooth stack can’t actually use it.
+  # undo https://github.com/NixOS/nixpkgs/blob/master/nixos/modules/installer/sd-card/sd-image-aarch64.nix#L25
+  # This replaces the existing console=ttyS0,115200n8 console=ttyAMA0,115200n8 console=tty0 with just console=tty1, so the serial ports are no longer hogged by the kernel console.
+  boot.kernelParams = lib.mkForce [
+    "console=tty1"
+  ];
+
+  # attempt latest kernel to enable blueotooth 6.17.7
+  boot.kernelPackages = pkgs.linuxPackages_latest;
+
+  # disable zfs, base profile pulls it in on the sd image:
+  # https://github.com/NixOS/nixpkgs/blob/master/nixos/modules/profiles/base.nix#L63
+  boot.supportedFilesystems = lib.mkForce [ "vfat" "ext4" ];
+
   environment.systemPackages = [
     pkgs.man-pages
     pkgs.man-pages-posix
@@ -107,8 +120,16 @@ in
     powerOnBoot = true;
     enable = true;
   };
+  hardware.enableRedistributableFirmware = true;
+
+  hardware.firmware = [
+    pkgs.raspberrypiWirelessFirmware
+  ];
+
   # enables dbus
-  services.bluetooth.enable = true;
+  services.blueman.enable = true;
+  services.dbus.enable = true;
+
 
 
   systemd.services.cool-headed=
