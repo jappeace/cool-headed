@@ -79,6 +79,7 @@ in
             group = "coolHeaded";
             useDefaultShell = true;
             isSystemUser = true;
+            extraGroups = [ "bluetooth" ];
         };
     };
 
@@ -102,7 +103,12 @@ in
   };
 
 
-  hardware.bluetooth.enable = true;
+  hardware.bluetooth = {
+    powerOnBoot = true;
+    enable = true;
+  };
+  # enables dbus
+  services.bluetooth.enable = true;
 
 
   systemd.services.cool-headed=
