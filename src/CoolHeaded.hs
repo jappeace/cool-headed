@@ -6,150 +6,192 @@ where
 
 import Control.Concurrent (threadDelay)
 import Control.Monad (forM_)
-import Control.Applicative ((<|>))
 import Data.Int (Int16)
+import Data.Maybe (listToMaybe)
+import Data.Text (Text)
+import qualified Data.Text as T
+
 import DBus
 import DBus.Client
+
 
 bluezBusName :: BusName
 bluezBusName = busName_ "org.bluez"
 
 adapterPath :: ObjectPath
-adapterPath = objectPath_ "/org/bluez/hci0"  -- change if not using hci0
+adapterPath = objectPath_ "/org/bluez/hci0"
+
+data DecodeError
+    = TopLevelNotDict Type
+    | EntryKeyNotObjectPath Variant
+    | EntryValueNotDict ObjectPath Type
+    | IfaceNameNotText ObjectPath Variant
+    | PropsNotDict ObjectPath Type
+    | MissingProp ObjectPath Text
+    | BadPropType ObjectPath Text Type
+    deriving (Show)
+
+type Device = (Text, Int16)   -- (MAC, RSSI)
 
 main :: IO ()
 main = do
-    -- Connect to the system bus (BlueZ lives here)
     client <- connectSystem
 
-    -- Make sure adapter is powered
     powerOnAdapter client
 
-    -- 5-second discovery
     putStrLn "Starting discovery for 5 seconds…"
-    _ <- call_ client $ (methodCall adapterPath (interfaceName_ "org.bluez.Adapter1") (memberName_ "StartDiscovery"))
-        { methodCallDestination = Just bluezBusName
-        }
+    _ <- call_ client $
+        (methodCall adapterPath "org.bluez.Adapter1" "StartDiscovery")
+            { methodCallDestination = Just bluezBusName }
 
     threadDelay (5 * 1000000)
 
-    _ <- call_ client $ (methodCall adapterPath (interfaceName_ "org.bluez.Adapter1") (memberName_ "StopDiscovery"))
-        { methodCallDestination = Just bluezBusName
-        }
+    _ <- call_ client $
+        (methodCall adapterPath "org.bluez.Adapter1" "StopDiscovery")
+            { methodCallDestination = Just bluezBusName }
+
     putStrLn "Discovery stopped.\n"
 
-    -- Query all managed objects from BlueZ and pick out devices
-    devs <- getDevicesWithRssi client
+    (errs, devs) <- getDevicesWithRssi client
 
     putStrLn "Devices found (MAC, RSSI):"
     forM_ devs $ \(addr, rssi) ->
-        putStrLn $ addr ++ "  RSSI=" ++ show rssi
+        putStrLn $ T.unpack addr ++ "  RSSI=" ++ show rssi
 
--- Power on the adapter with org.freedesktop.DBus.Properties.Set
+    putStrLn ""
+    putStrLn "Decode errors:"
+    forM_ errs $ \e ->
+        putStrLn ("  " ++ show e)
+
 powerOnAdapter :: Client -> IO ()
 powerOnAdapter client = do
-    -- Get current Powered property
     reply <- call_ client $
-        (methodCall adapterPath (interfaceName_ "org.freedesktop.DBus.Properties") (memberName_ "Get"))
+        (methodCall adapterPath "org.freedesktop.DBus.Properties" "Get")
             { methodCallDestination = Just bluezBusName
             , methodCallBody =
-                [ toVariant ("org.bluez.Adapter1" :: String)
-                , toVariant ("Powered" :: String)
+                [ toVariant ("org.bluez.Adapter1" :: Text)
+                , toVariant ("Powered" :: Text)
                 ]
             }
 
     let body = methodReturnBody reply
         poweredVariant = case body of
             [v] -> v
-            _   -> error "Unexpected Get(Powered) reply shape"
+            _   -> error "Unexpected reply shape from Get(Powered)"
 
         mPowered :: Maybe Bool
         mPowered = fromVariant =<< fromVariant poweredVariant
 
     case mPowered of
-        Just True  -> return ()
+        Just True -> pure ()
         _ -> do
             putStrLn "Powering on adapter…"
-            let value = toVariant (True :: Bool) -- inner value for Variant 'v'
+            let value = toVariant (True :: Bool)
             _ <- call_ client $
-                (methodCall adapterPath (interfaceName_ "org.freedesktop.DBus.Properties") (memberName_ "Set"))
+                (methodCall adapterPath "org.freedesktop.DBus.Properties" "Set")
                     { methodCallDestination = Just bluezBusName
                     , methodCallBody =
-                        [ toVariant ("org.bluez.Adapter1" :: String)
-                        , toVariant ("Powered" :: String)
+                        [ toVariant ("org.bluez.Adapter1" :: Text)
+                        , toVariant ("Powered" :: Text)
                         , value
                         ]
                     }
-            return ()
+            pure ()
 
--- Grab all objects from BlueZ and extract (Address, RSSI) from org.bluez.Device1
-getDevicesWithRssi :: Client -> IO [(String, Int16)]
+getDevicesWithRssi :: Client -> IO ([DecodeError], [Device])
 getDevicesWithRssi client = do
     reply <- call_ client $
-        (methodCall (objectPath_ "/") (interfaceName_ "org.freedesktop.DBus.ObjectManager") (memberName_ "GetManagedObjects"))
-            { methodCallDestination = Just bluezBusName
-            }
+        (methodCall "/" "org.freedesktop.DBus.ObjectManager" "GetManagedObjects")
+            { methodCallDestination = Just bluezBusName }
 
     let body = methodReturnBody reply
-        objectsDictVar = case body of
-            [v] -> v
-            _   -> error "Unexpected GetManagedObjects reply shape"
 
-        -- a{oa{sa{sv}}}
-        mTopDict :: Maybe Dictionary
-        mTopDict = fromVariant objectsDictVar
+    case body of
+        [objectsVariant] ->
+            case fromVariant objectsVariant :: Maybe Dictionary of
+                Nothing ->
+                    pure ([TopLevelNotDict (variantType objectsVariant)], [])
+                Just dict -> do
+                    let entries = dictionaryItems dict
+                        results = map decodeTopEntry entries
+                        (errsLists, devLists) = unzip results
+                    pure (concat errsLists, concat devLists)
+        _ ->
+            pure ([TopLevelNotDict TypeVariant], [])  -- "impossible" shape but tagged
 
-    print body
-    case mTopDict of
-        Nothing   -> return []
-        Just dict ->
-            let entries = dictionaryItems dict
-            in return (concatMap decodeDevice entries)
+-- Each top-level entry: key = object path, value = dict of interfaces
+decodeTopEntry
+    :: (Variant, Variant)
+    -> ([DecodeError], [Device])
+decodeTopEntry (pathVar, ifacesVar) =
+    case fromVariant pathVar :: Maybe ObjectPath of
+        Nothing ->
+            ([EntryKeyNotObjectPath pathVar], [])
+        Just path ->
+            case fromVariant ifacesVar :: Maybe Dictionary of
+                Nothing ->
+                    ([EntryValueNotDict path (variantType ifacesVar)], [])
+                Just ifacesDict ->
+                    let ifaceEntries = dictionaryItems ifacesDict
+                        results = map (decodeIface path) ifaceEntries
+                        (errsLists, devLists) = unzip results
+                    in (concat errsLists, concat devLists)
 
--- One top-level entry: key = object path, value = dict of interfaces
-decodeDevice :: (Variant, Variant) -> [(String, Int16)]
-decodeDevice (objPathVar, ifacesVar) =
-    case (fromVariant objPathVar :: Maybe ObjectPath,
-          fromVariant ifacesVar  :: Maybe Dictionary) of
-        (Just _objPath, Just ifacesDict) ->
-            let ifaceEntries = dictionaryItems ifacesDict
-            in concatMap decodeIfDevice ifaceEntries
-        _ -> []
+-- One interface entry on a path: key = interface name, value = dict of properties
+decodeIface
+    :: ObjectPath
+    -> (Variant, Variant)
+    -> ([DecodeError], [Device])
+decodeIface path (ifaceNameVar, propsVar) =
+    case fromVariant ifaceNameVar :: Maybe Text of
+        Nothing ->
+            ([IfaceNameNotText path ifaceNameVar], [])
+        Just ifaceName
+            | ifaceName /= "org.bluez.Device1" ->
+                ([], [])   -- not a device; ignore
+            | otherwise ->
+                case fromVariant propsVar :: Maybe Dictionary of
+                    Nothing ->
+                        ([PropsNotDict path (variantType propsVar)], [])
+                    Just propsDict ->
+                        decodeDeviceProps path (dictionaryItems propsDict)
 
--- Look for org.bluez.Device1 interface
-decodeIfDevice :: (Variant, Variant) -> [(String, Int16)]
-decodeIfDevice (ifaceNameVar, propsVar) =
-    case (fromVariant ifaceNameVar :: Maybe String,
-          fromVariant propsVar    :: Maybe Dictionary) of
-        (Just "org.bluez.Device1", Just propsDict) ->
-            let props = dictionaryItems propsDict
-            in maybeToListDevice props
-        _ -> []
+-- Properties dict: key = property name (Text), value = Variant (wrapped)
+decodeDeviceProps
+    :: ObjectPath
+    -> [(Variant, Variant)]
+    -> ([DecodeError], [Device])
+decodeDeviceProps path props =
+    let mAddrVar = lookupProp "Address" props
+        mRssiVar = lookupProp "RSSI"   props
+    in case (mAddrVar, mRssiVar) of
+        (Nothing, _) ->
+            ([MissingProp path "Address"], [])
+        (_, Nothing) ->
+            ([MissingProp path "RSSI"], [])
+        (Just addrVar, Just rssiVar) ->
+            let mAddr :: Maybe Text
+                mAddr = fromVariant =<< fromVariant addrVar
 
--- Extract Address (String) and RSSI (Int16) from property dict
-maybeToListDevice :: [(Variant, Variant)] -> [(String, Int16)]
-maybeToListDevice props =
-    case (lookupPropString "Address" props, lookupPropInt16 "RSSI" props) of
-        (Just addr, Just rssi) -> [(addr, rssi)]
-        _                      -> []
+                mRssi :: Maybe Int16
+                mRssi = fromVariant =<< fromVariant rssiVar
+            in case (mAddr, mRssi) of
+                (Nothing, _) ->
+                    ([BadPropType path "Address" (variantType addrVar)], [])
+                (_, Nothing) ->
+                    ([BadPropType path "RSSI" (variantType rssiVar)], [])
+                (Just addr, Just rssi) ->
+                    ([], [(addr, rssi)])
 
-lookupPropString :: String -> [(Variant, Variant)] -> Maybe String
-lookupPropString name = go
+-- Find a property by name in a{sv}
+lookupProp
+    :: Text
+    -> [(Variant, Variant)]
+    -> Maybe Variant
+lookupProp name =
+    fmap snd . listToMaybe . filter matches
   where
-    go [] = Nothing
-    go ((k, v):xs) =
-        case fromVariant k :: Maybe String of
-            Just n | n == name ->
-                -- v is the 'v' (Variant) containing a String
-                (fromVariant =<< fromVariant v) <|> go xs
-            _ -> go xs
-
-lookupPropInt16 :: String -> [(Variant, Variant)] -> Maybe Int16
-lookupPropInt16 name = go
-  where
-    go [] = Nothing
-    go ((k, v):xs) =
-        case fromVariant k :: Maybe String of
-            Just n | n == name ->
-                (fromVariant =<< fromVariant v) <|> go xs
-            _ -> go xs
+    matches (k, _) =
+        case fromVariant k :: Maybe Text of
+            Just n  -> n == name
+            Nothing -> False
