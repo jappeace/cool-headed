@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards #-}
 module CoolHeaded
   ( main
   )
@@ -8,6 +9,9 @@ import Control.Concurrent (threadDelay)
 import Control.Monad (forM_)
 import Data.List (nub)
 import qualified Data.Text as T
+import CoolHeaded.Parser
+import Options.Applicative(execParser)
+
 
 import DBus.Client
 
@@ -15,7 +19,7 @@ import CoolHeaded.Ble
 
 main :: IO ()
 main = do
-
+    Option {..} <- execParser options
 
     client <- connectSystem
 
@@ -31,5 +35,9 @@ main = do
     let uniqueDevices = nub devices
 
     putStrLn "Devices found:"
-    forM_ uniqueDevices $ \device ->
-        putStrLn (T.unpack $ getMac device)
+    forM_ uniqueDevices $ \device -> do
+        let mac = getMac device
+        if optionMac == mac then
+          putStrLn $ "found the blessed mac: " <> T.unpack mac
+        else
+          putStrLn (T.unpack $ getMac device)
