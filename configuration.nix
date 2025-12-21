@@ -52,6 +52,7 @@ in
     pkgs.man-pages
     pkgs.man-pages-posix
     pkgs.libgpiod
+    pkgs.python313Packages.gpiozero
   ];
 
   #
